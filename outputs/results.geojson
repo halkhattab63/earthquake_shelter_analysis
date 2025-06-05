@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "results",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": 1, "name": "Shelter A", "Distance_to_Roads": 35.266226056282981, "Distance_to_Faults": 140.26395414127617, "Slope": 0.0, "Population_Density": 8000, "LandUse_Score": 0.2, "Distance_to_Roads_norm": 0.14363301433185888, "Distance_to_Faults_norm": 0.0, "Slope_norm": 0.0, "Population_Density_norm": 0.42857142857136732, "LandUse_Score_norm": 0.99999999000000006, "Distance_to_Roads_w": 0.071285065012901563, "Distance_to_Faults_w": 0.0, "Slope_w": 0.0, "Population_Density_w": 0.021428571428568369, "LandUse_Score_w": 0.084799999152000011, "score": 0.17751363559346994 }, "geometry": { "type": "Point", "coordinates": [ 39.222, 38.674 ] } },
+{ "type": "Feature", "properties": { "id": 2, "name": "Shelter B", "Distance_to_Roads": 17.640966504181119, "Distance_to_Faults": 187.03814617881346, "Slope": 0.0, "Population_Density": 12000, "LandUse_Score": 0.1, "Distance_to_Roads_norm": 0.0, "Distance_to_Faults_norm": 0.33296838875471996, "Slope_norm": 0.0, "Population_Density_norm": 0.99999999999985711, "LandUse_Score_norm": 0.0, "Distance_to_Roads_w": 0.0, "Distance_to_Faults_w": 0.081710442600408287, "Slope_w": 0.0, "Population_Density_w": 0.049999999999992856, "LandUse_Score_w": 0.0, "score": 0.13171044260040116 }, "geometry": { "type": "Point", "coordinates": [ 39.225, 38.676 ] } },
+{ "type": "Feature", "properties": { "id": 3, "name": "Shelter C", "Distance_to_Roads": 140.35133106727318, "Distance_to_Faults": 280.74032852665476, "Slope": 0.0, "Population_Density": 5000, "LandUse_Score": 0.2, "Distance_to_Roads_norm": 0.99999999999185074, "Distance_to_Faults_norm": 0.99999999999288147, "Slope_norm": 0.0, "Population_Density_norm": 0.0, "LandUse_Score_norm": 0.99999999000000006, "Distance_to_Roads_w": 0.49629999999595553, "Distance_to_Faults_w": 0.24539999999825313, "Slope_w": 0.0, "Population_Density_w": 0.0, "LandUse_Score_w": 0.084799999152000011, "score": 0.82649999914620864 }, "geometry": { "type": "Point", "coordinates": [ 39.227, 38.672 ] } }
+]
+}
