@@ -15,7 +15,7 @@ def check_file_exists(path):
     if not os.path.exists(path):
         raise FileNotFoundError(f"❌ File not found: {path}")
 
-def load_shelter_points(filename="shelters.geojson"):
+def load_shelter_points(filename="shelters_from_osm.geojson"):
     """
     Load shelter points from a GeoJSON file.
     Returns:

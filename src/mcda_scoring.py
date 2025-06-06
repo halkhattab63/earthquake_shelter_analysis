@@ -175,7 +175,7 @@ import os
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-def load_weights(json_path="data/criteria_weights.json"):
+def load_weights(json_path="data/shelters_with_criteria.json"):
     """Load AHP weights and directions from JSON file."""
     if not os.path.exists(json_path):
         raise FileNotFoundError(f"Weights file not found: {json_path}")
