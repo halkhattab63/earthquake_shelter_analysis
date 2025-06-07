@@ -7,12 +7,14 @@ import os
 # إعداد سجل التشغيل
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
+
 def create_colormap(min_score, max_score):
-    """Create a stepped color map from red to green based on score range."""
+    """Create color map from red (bad) to green (good)."""
     return cm.linear.RdYlGn_09.scale(min_score, max_score).to_step(n=10)
 
+
 def add_geojson_layer(fmap, gdf, name, style_function):
-    """Helper to add optional GeoJSON layer to the map."""
+    """Add a vector layer with tooltip."""
     fields = [col for col in gdf.columns if col != "geometry"]
     folium.GeoJson(
         gdf,
@@ -21,103 +23,109 @@ def add_geojson_layer(fmap, gdf, name, style_function):
         tooltip=folium.GeoJsonTooltip(fields=fields, aliases=[f"{col}:" for col in fields])
     ).add_to(fmap)
 
+
 def visualize_shelters(
     gdf=None,
     shelter_path="data/processed/shelters_with_score.geojson",
     roads_path="data/raw/roads.geojson",
     faults_path="data/raw/fault_lines.geojson",
     output_path="outputs/maps/shelter_map.html",
-    additional_layers=None
+    additional_layers=None,
+    show_labels=False,
 ):
-    """Generate an interactive Folium map with shelters, roads, fault lines, and optional layers."""
+    """Visualize shelters with MCDA score and relevant infrastructure on an interactive map."""
 
-    # Load shelter data
+    # Load shelters
     if gdf is None:
-        logging.info("📍 Loading shelter data from file...")
+        logging.info("📍 Loading shelters...")
         if not os.path.exists(shelter_path):
-            raise FileNotFoundError(f"Shelter file not found: {shelter_path}")
+            raise FileNotFoundError(f"❌ Shelter file not found: {shelter_path}")
         gdf = gpd.read_file(shelter_path)
     else:
-        logging.info("📍 Using in-memory GeoDataFrame...")
+        logging.info("📍 Using GeoDataFrame from memory...")
 
     if "score" not in gdf.columns:
-        raise ValueError("GeoDataFrame must contain a 'score' column.")
+        raise ValueError("GeoDataFrame must include a 'score' column.")
 
-    # Ensure geometries are in WGS84
-    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+    # Reproject if needed
+    if gdf.crs and gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(epsg=4326)
 
-    # Calculate centroid for center
-    center_geom = gdf.geometry.centroid
-    center = [center_geom.y.mean(), center_geom.x.mean()]
-    fmap = folium.Map(location=center, zoom_start=12, tiles="CartoDB positron")
+    # Map center
+    center = gdf.unary_union.centroid
+    fmap = folium.Map(location=[center.y, center.x], zoom_start=12, tiles="CartoDB positron")
 
-    # Color map
+    # Color scale
     min_score = gdf["score"].min()
     max_score = gdf["score"].max()
     colormap = create_colormap(min_score, max_score)
 
-    # Add shelter points
-    logging.info("🖍️ Adding shelters...")
-    count = 0
+    # Add shelters as circles
+    logging.info("🖍️ Drawing shelter points...")
     for _, row in gdf.iterrows():
         score = row["score"]
-        centroid = row.geometry.centroid
-        popup_text = f"""
-        <b>Shelter Information</b><br>
-        Score: {round(score, 3)}<br>
-        Distance to Roads: {round(row.get('Distance_to_Roads', 0), 2)} m<br>
-        Distance to Faults: {round(row.get('Distance_to_Faults', 0), 2)} m<br>
-        Population Density: {round(row.get('Population_Density', 0), 2)}<br>
-        Land Use Score: {round(row.get('LandUse_Score', 0), 2)}<br>
+        coords = row.geometry.centroid
+
+        popup_info = f"""
+        <b>🏕️ Shelter Info</b><br>
+        📊 Score: <b>{round(score, 3)}</b><br>
+        🛣️ Distance to Roads: {round(row.get('Distance_to_Roads', 0), 2)} m<br>
+        🌋 Distance to Faults: {round(row.get('Distance_to_Faults', 0), 2)} m<br>
+        👥 Population Density: {round(row.get('Population_Density', 0), 2)}<br>
+        🏞️ Land Use Score: {round(row.get('LandUse_Score', 0), 2)}<br>
         """
         if "Slope" in row:
-            popup_text += f"Slope: {round(row.get('Slope', 0), 2)}<br>"
+            popup_info += f"⛰️ Slope: {round(row.get('Slope', 0), 2)}<br>"
 
         folium.CircleMarker(
-            location=[centroid.y, centroid.x],
-            radius=6,
-            color=colormap(score),
+            location=[coords.y, coords.x],
+            radius=6 + 3 * ((score - min_score) / (max_score - min_score + 1e-6)),  # dynamic radius
+            color="black",
+            weight=0.5,
             fill=True,
             fill_color=colormap(score),
-            fill_opacity=0.85,
-            popup=folium.Popup(popup_text, max_width=300)
+            fill_opacity=0.9,
+            popup=folium.Popup(popup_info, max_width=300)
         ).add_to(fmap)
-        count += 1
 
-    logging.info(f"✅ Plotted {count} shelters on the map.")
+        if show_labels:
+            folium.Marker(
+                location=[coords.y, coords.x],
+                icon=folium.DivIcon(html=f"<div style='font-size:10px;'>{round(score,2)}</div>")
+            ).add_to(fmap)
 
-    # Add fault lines layer
+    logging.info(f"✅ Total shelters plotted: {len(gdf)}")
+
+    # Fault lines
     if os.path.exists(faults_path):
         logging.info("🌋 Adding fault lines...")
         faults = gpd.read_file(faults_path)
         add_geojson_layer(
             fmap, faults, "Fault Lines",
-            style_function=lambda x: {"color": "red", "weight": 2, "opacity": 0.6}
+            style_function=lambda _: {"color": "red", "weight": 2, "opacity": 0.7}
         )
 
-    # Add roads layer
+    # Roads
     if os.path.exists(roads_path):
         logging.info("🛣️ Adding roads...")
         roads = gpd.read_file(roads_path)
         add_geojson_layer(
             fmap, roads, "Roads",
-            style_function=lambda x: {"color": "blue", "weight": 1.5, "opacity": 0.5}
+            style_function=lambda _: {"color": "blue", "weight": 1.5, "opacity": 0.5}
         )
 
-    # Add any additional layers
+    # Additional layers
     if additional_layers:
-        for layer_path, layer_config in additional_layers.items():
+        for layer_path, config in additional_layers.items():
             if os.path.exists(layer_path):
-                name = layer_config.get("name", os.path.basename(layer_path))
-                style_fn = layer_config.get("style_function", lambda x: {"color": "gray", "weight": 1})
-                logging.info(f"➕ Adding layer: {name}")
-                extra_gdf = gpd.read_file(layer_path)
-                add_geojson_layer(fmap, extra_gdf, name, style_fn)
+                name = config.get("name", os.path.basename(layer_path))
+                style_fn = config.get("style_function", lambda _: {"color": "gray", "weight": 1})
+                layer_data = gpd.read_file(layer_path)
+                add_geojson_layer(fmap, layer_data, name, style_fn)
             else:
                 logging.warning(f"⚠️ Layer not found: {layer_path}")
 
-    # Add legend and controls
+    # Legend and controls
     colormap.caption = "Shelter Suitability Score"
     fmap.add_child(colormap)
     folium.LayerControl().add_to(fmap)
@@ -125,9 +133,4 @@ def visualize_shelters(
     # Save map
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fmap.save(output_path)
-    logging.info(f"✅ Map saved to: {output_path}")
-
-
-
-
-
+    logging.info(f"🗺️ Map saved to: {output_path}")

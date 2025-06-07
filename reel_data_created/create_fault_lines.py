@@ -1,14 +1,16 @@
 import os
 import geopandas as gpd
 import requests
-from io import BytesIO
-import zipfile
 import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 
-# 🔧 Ayarlar
-url = "https://github.com/fraxen/tectonicplates/raw/master/GeoJSON/PB2002_boundaries.json"
-save_path = "data/raw/fault_lines.geojson"
+# 📍 Kaynak: Global Plate Boundaries (PB2002)
+URL = "https://github.com/fraxen/tectonicplates/raw/master/GeoJSON/PB2002_boundaries.json"
+SAVE_PATH = "data/processed/fault_lines_elazig.geojson"
+os.makedirs("data/processed", exist_ok=True)
+
+# 📌 Elazığ Bounding Box (yaklaşık)
 bbox_elazig = {
     "minx": 39.0,
     "maxx": 39.5,
@@ -16,20 +18,45 @@ bbox_elazig = {
     "maxy": 39.0
 }
 
-# 📁 Klasör oluştur
-os.makedirs("data/raw", exist_ok=True)
+print("🔽 Fay hattı verisi indiriliyor ve işleniyor...")
 
-print("🔽 USGS Tectonic Plates verisi indiriliyor...")
-gdf = gpd.read_file(url)
-
-# 📐 Koordinat sistemini EPSG:4326 yap
+# ✅ 1. Veri oku ve EPSG:4326'e çevir
+gdf = gpd.read_file(URL)
 gdf = gdf.to_crs(epsg=4326)
 
-# 📍 Elazığ çevresine göre filtrele
+# ✅ 2. Sadece çizgi (LineString/MultiLineString) türünü filtrele
+gdf = gdf[gdf.geometry.type.isin(["LineString", "MultiLineString"])]
+
+# ✅ 3. Elazığ bölgesi ile sınırla
 gdf_elazig = gdf.cx[bbox_elazig["minx"]:bbox_elazig["maxx"], bbox_elazig["miny"]:bbox_elazig["maxy"]]
 
-# 💾 Kaydet
-gdf_elazig.to_file(save_path, driver="GeoJSON")
+# ✅ 4. Uzunluk (metre) hesapla
+gdf_elazig = gdf_elazig.to_crs(epsg=3857)  # metrik projeksiyon
+gdf_elazig["length_m"] = gdf_elazig.geometry.length
+gdf_elazig = gdf_elazig.to_crs(epsg=4326)  # tekrar coğrafi
 
-print(f"✅ Fay verisi kaydedildi: {save_path}")
-print(f"📌 Kayıt sayısı: {len(gdf_elazig)}")
+# ✅ 5. Tür bilgisi (isteğe bağlı: convergent, transform, vb.)
+def classify_fault(name):
+    if "Transform" in name:
+        return "transform"
+    elif "Convergent" in name or "Subduction" in name:
+        return "convergent"
+    elif "Divergent" in name:
+        return "divergent"
+    else:
+        return "unknown"
+
+if "Name" in gdf_elazig.columns:
+    gdf_elazig["fault_type"] = gdf_elazig["Name"].apply(classify_fault)
+else:
+    gdf_elazig["fault_type"] = "unknown"
+
+# ✅ 6. Son sütunları seç
+keep_cols = ["fault_type", "length_m", "geometry"]
+final_gdf = gdf_elazig[keep_cols].copy()
+
+# ✅ 7. Kaydet
+final_gdf.to_file(SAVE_PATH, driver="GeoJSON")
+print(f"✅ Fay verisi kaydedildi: {SAVE_PATH}")
+print(f"📌 Elazığ'da bulunan fay hattı sayısı: {len(final_gdf)}")
+print(final_gdf.head())

@@ -20,5 +20,5 @@ from .load_data import (
     load_population_density,
     load_land_use,
     load_rivers,
-    load_dem
+    load_dem_path  # ✅ اسم الدالة الصحيح
 )

@@ -2,68 +2,80 @@ import os
 import osmnx as ox
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point
 import sys
+
+from shapely.geometry import Point
+
 sys.stdout.reconfigure(encoding='utf-8')
 
-# 📍 تحديد المنطقة المستهدفة: Elazığ، تركيا
+# 📍 المدينة المستهدفة
 place = "Elazığ, Turkey"
+os.makedirs("data/processed", exist_ok=True)
 
-# 📂 إنشاء مجلد لحفظ البيانات
-os.makedirs("data/raw", exist_ok=True)
-
-# 🏙️ تحديد الفلاتر لجلب أنواع استخدامات الأراضي المختلفة
+# 🏷️ أنواع استخدامات الأراضي التي سنطلبها
 tags = {
-    "landuse": ["residential", "industrial", "commercial", "park", "forest", "grass", "meadow"]
+    "landuse": True,  # يجلب جميع الأنواع
+    "leisure": True,
+    "amenity": True,
+    "military": True,
+    "natural": True
 }
 
 print("🔽 جلب بيانات استخدامات الأراضي من OpenStreetMap...")
-# 🗺️ جلب البيانات من OSM باستخدام الفلاتر المحددة
 gdf = ox.features_from_place(place, tags=tags)
 
-# 🧼 تصفية البيانات للاحتفاظ فقط بالهندسة من نوع Polygon أو MultiPolygon
+# ✅ فقط مناطق (Polygon/MultiPolygon)
 gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
 
-# 📏 تحويل CRS إلى EPSG:3857 لحساب المساحة بدقة
+# ✅ تحويل إلى CRS متري لحساب المساحة
 gdf_proj = gdf.to_crs(epsg=3857)
 gdf["area_m2"] = gdf_proj.area
 
-# 📍 حساب المركز الهندسي (centroid) لكل مضلع
-centroids_proj = gdf_proj.centroid
-centroids = gpd.GeoSeries(centroids_proj, crs=3857).to_crs(epsg=4326)
-
-# 🧭 استخراج الإحداثيات الجغرافية للمركز الهندسي
-gdf["lat"] = centroids.y
+# ✅ حساب Centroid وتحويله لـ EPSG:4326
+centroids = gdf_proj.centroid.to_crs(epsg=4326)
 gdf["lon"] = centroids.x
+gdf["lat"] = centroids.y
 
-# 🧠 تعيين تصنيف يدوي لكل نوع من استخدامات الأراضي
+# ✅ تصنيف نوع الأرض تلقائيًا بناءً على الأعمدة
 def classify_landuse(row):
-    lu = row.get("landuse", "")
-    if lu == "residential":
-        return "residential"
-    elif lu == "industrial":
-        return "industrial"
-    elif lu == "commercial":
-        return "commercial"
-    elif lu == "park":
-        return "park"
-    elif lu == "forest":
-        return "forest"
-    elif lu == "grass":
-        return "grass"
-    elif lu == "meadow":
-        return "meadow"
-    else:
-        return "other"
+    for col in ["landuse", "leisure", "amenity", "natural", "military"]:
+        val = row.get(col)
+        if pd.notna(val):
+            return f"{col}:{val}"
+    return "unknown"
 
 gdf["landuse_type"] = gdf.apply(classify_landuse, axis=1)
 
-# 🎯 تحديد الأعمدة المطلوبة
-final_gdf = gdf[["landuse", "landuse_type", "area_m2", "lat", "lon", "geometry"]].copy()
+# ✅ إعطاء درجة خطر تقديرية لكل نوع
+def hazard_score(landuse_type):
+    if "residential" in landuse_type:
+        return 2  # مأهولة - متوسط خطر
+    elif "industrial" in landuse_type:
+        return 3  # بنية صلبة وخطر ثانوي
+    elif "commercial" in landuse_type:
+        return 2
+    elif "park" in landuse_type or "grass" in landuse_type:
+        return 1  # مناسبة للملاجئ
+    elif "military" in landuse_type or "cemetery" in landuse_type:
+        return 4  # غير مناسبة
+    else:
+        return 3  # تصنيف احترازي
 
-# 💾 حفظ البيانات بصيغة GeoJSON
-output_path = "data/raw/landuse.geojson"
-final_gdf.to_file(output_path, driver="GeoJSON")
+gdf["hazard_score"] = gdf["landuse_type"].apply(hazard_score)
 
-print(f"✅ تم حفظ ملف landuse.geojson بنجاح. عدد السجلات: {len(final_gdf)}")
+# ✅ تقييم صلاحية المنطقة كمأوى
+gdf["shelter_candidate"] = gdf["area_m2"].apply(lambda a: a > 1000)
+
+# ✅ الأعمدة النهائية
+cols = ["landuse_type", "area_m2", "lat", "lon", "hazard_score", "shelter_candidate", "geometry"]
+final_gdf = gdf[cols].copy()
+
+# ✅ حفظ النتائج
+geojson_path = "data/processed/landuse.geojson"
+csv_path = "data/processed/landuse_summary.csv"
+final_gdf.to_file(geojson_path, driver="GeoJSON")
+final_gdf.drop(columns="geometry").to_csv(csv_path, index=False)
+
+print(f"✅ تم حفظ {geojson_path} و {csv_path}")
+print(f"📌 إجمالي السجلات: {len(final_gdf)}")
 print(final_gdf.head())

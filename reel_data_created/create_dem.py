@@ -1,95 +1,87 @@
-
-import requests
 import os
+import sys
 import gzip
 import shutil
-import sys
+import requests
 import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
+from rasterio.enums import Resampling
 from rasterio.transform import from_origin
 
+# 🖥️ UTF-8 destekli çıktı
 sys.stdout.reconfigure(encoding='utf-8')
 
-# 📍 SRTM veri kaynağı – Elazığ için
-url = "https://s3.amazonaws.com/elevation-tiles-prod/skadi/N38/N38E039.hgt.gz"
-tile_name = "N38E039"
-compressed_file = f"{tile_name}.hgt.gz"
-hgt_file = f"{tile_name}.hgt"
-tif_file = f"{tile_name}.tif"
+# 📍 Elazığ için SRTM veri dosyası (1° x 1° aralığı kapsar)
+TILE_NAME = "N38E039"
+URL = f"https://s3.amazonaws.com/elevation-tiles-prod/skadi/N38/{TILE_NAME}.hgt.gz"
 
-# 📂 Dosya yolları
-output_dir = "data/raw"
-os.makedirs(output_dir, exist_ok=True)
+# 📁 Klasörleri tanımla
+RAW_DIR = "data/raw"
+os.makedirs(RAW_DIR, exist_ok=True)
 
-gz_path = os.path.join(output_dir, compressed_file)
-hgt_path = os.path.join(output_dir, hgt_file)
-tif_path = os.path.join(output_dir, tif_file)
+gz_path = os.path.join(RAW_DIR, f"{TILE_NAME}.hgt.gz")
+hgt_path = os.path.join(RAW_DIR, f"{TILE_NAME}.hgt")
+tif_path = os.path.join(RAW_DIR, f"{TILE_NAME}_dem.tif")
 
-# ✅ Adım 1: İndir
+# ✅ Adım 1: Veri indir
 if not os.path.exists(gz_path):
     print("🔽 SRTM verisi indiriliyor...")
-    response = requests.get(url, stream=True)
-    if response.status_code == 200:
-        with open(gz_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    f.write(chunk)
-        print(f"✅ İndirme tamamlandı: {gz_path}")
-    else:
-        print(f"❌ İndirme başarısız. Kod: {response.status_code}")
-        sys.exit()
+    try:
+        response = requests.get(URL, stream=True)
+        response.raise_for_status()
+        with open(gz_path, "wb") as f:
+            shutil.copyfileobj(response.raw, f)
+        print("✅ İndirme tamamlandı.")
+    except Exception as e:
+        print(f"❌ Hata oluştu: {e}")
+        sys.exit(1)
 else:
-    print("📁 Dosya zaten mevcut, tekrar indirme yapılmadı.")
+    print("📁 Dosya zaten mevcut, tekrar indirilmedi.")
 
-# ✅ Adım 2: Aç (gzip → .hgt)
+# ✅ Adım 2: GZip dosyasını çıkar
 if not os.path.exists(hgt_path):
     print("📦 GZip dosyası açılıyor...")
     with gzip.open(gz_path, 'rb') as f_in, open(hgt_path, 'wb') as f_out:
         shutil.copyfileobj(f_in, f_out)
-    print(f"✅ Açma tamamlandı: {hgt_path}")
+    print("✅ Çıkartma tamamlandı.")
 else:
     print("📂 .hgt dosyası zaten mevcut.")
 
-# ✅ Adım 3: Raster olarak oku ve GeoTIFF’e çevir
-print("🗺️ Raster verisi yükleniyor...")
-with rasterio.open(
-    hgt_path,
-    'r',
-    driver='SRTMHGT',
-) as src:
-    data = src.read(1)
+# ✅ Adım 3: GeoTIFF olarak kaydet
+print("🗺️ GeoTIFF oluşturuluyor...")
+with rasterio.open(hgt_path, 'r', driver='SRTMHGT') as src:
+    data = src.read(1).astype("float32")  # 🔁 fix: convert to float32
+    data[data == -32768] = np.nan         # 🚫 handle NODATA
     transform = src.transform
 
-    # GeoTIFF olarak yaz
     with rasterio.open(
-        tif_path,
-        'w',
+        tif_path, 'w',
         driver='GTiff',
         height=src.height,
         width=src.width,
         count=1,
-        dtype=data.dtype,
-        crs="EPSG:4326",
-        transform=transform,
+        dtype='float32',
+        crs='EPSG:4326',
+        transform=transform
     ) as dst:
         dst.write(data, 1)
 
-    print(f"✅ GeoTIFF olarak kaydedildi: {tif_path}")
-    print(f"📏 Boyut: {src.width}x{src.height}, CRS: {src.crs}")
 
-# ✅ Adım 4: Görselleştir
+print(f"✅ GeoTIFF kaydedildi: {tif_path}")
+
+# ✅ Adım 4: İstatistik ve Görselleştirme
+print("📊 Yükseklik verisi istatistikleri:")
+print(f"   ↳ Min: {np.nanmin(data):.2f} m")
+print(f"   ↳ Max: {np.nanmax(data):.2f} m")
+print(f"   ↳ Mean: {np.nanmean(data):.2f} m")
+
 plt.figure(figsize=(8, 6))
 plt.imshow(data, cmap='terrain')
-plt.colorbar(label="Yükseklik (metre)")
-plt.title("Elazığ Yükseklik Verisi (SRTM)")
+plt.colorbar(label="Yükseklik (m)")
+plt.title("Elazığ Sayısal Yükseklik Modeli (DEM)")
 plt.tight_layout()
 plt.show()
-
-
-
-
-
 
 
 

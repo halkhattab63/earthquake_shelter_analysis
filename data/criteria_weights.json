@@ -1,7 +1,18 @@
 {
-    "Distance_to_Roads": 0.4963,
-    "Distance_to_Faults": 0.2454,
-    "Population_Density": 0.1235,
-    "LandUse_Score": 0.05,
-    "Slope": 0.0848
+    "Distance_to_Roads": {
+        "weight": 0.5579,
+        "direction": "positive"
+    },
+    "Distance_to_Faults": {
+        "weight": 0.2633,
+        "direction": "positive"
+    },
+    "Population_Density": {
+        "weight": 0.1219,
+        "direction": "positive"
+    },
+    "LandUse_Score": {
+        "weight": 0.0569,
+        "direction": "positive"
+    }
 }

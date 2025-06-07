@@ -14,7 +14,7 @@ WEIGHTS_PATH = os.path.join(DATA_DIR, "criteria_weights.json")
 CRITERIA = [
     "Distance_to_Roads",
     "Distance_to_Faults",
-    # "Slope",
+    "Slope",
     "Population_Density",
     "LandUse_Score"
 ]

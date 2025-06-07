@@ -1,94 +1,125 @@
 import numpy as np
 import json
 import logging
-
+import pandas as pd
 
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
-# Configure logging
+# إعداد السجل
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
+RI_VALUES = {
+    1: 0.00, 2: 0.00, 3: 0.58, 4: 0.90, 5: 1.12,
+    6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49
+}
+
+
+def validate_matrix(matrix):
+    """
+    Validate AHP pairwise comparison matrix for:
+    - Square shape
+    - Diagonal of 1s
+    - Reciprocal symmetry
+    """
+    if matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("❌ Matrix must be square.")
+    
+    if not np.allclose(np.diag(matrix), 1.0):
+        raise ValueError("❌ Diagonal elements must all be 1.")
+
+    if not np.allclose(matrix, 1 / matrix.T, rtol=1e-3):
+        raise ValueError("❌ Matrix must be reciprocal (a_ij = 1 / a_ji).")
+
+    logging.info("✅ Matrix passed validation.")
+
+
 def normalize_matrix(matrix):
-    """
-    Normalize a pairwise comparison matrix by column-wise division.
-
-    Args:
-        matrix (np.ndarray): Raw pairwise comparison matrix.
-
-    Returns:
-        np.ndarray: Normalized matrix.
-    """
     column_sum = matrix.sum(axis=0)
     return matrix / column_sum
 
+
 def calculate_weights(normalized_matrix):
-    """
-    Calculate AHP weights as the average of rows.
-
-    Args:
-        normalized_matrix (np.ndarray): Normalized comparison matrix.
-
-    Returns:
-        np.ndarray: Array of weights.
-    """
     return normalized_matrix.mean(axis=1)
 
+
 def calculate_consistency_ratio(matrix, weights):
-    """
-    Calculate the consistency ratio (CR) of an AHP matrix.
-
-    Args:
-        matrix (np.ndarray): Raw comparison matrix.
-        weights (np.ndarray): Computed weights.
-
-    Returns:
-        float: Consistency Ratio (CR).
-    """
     n = matrix.shape[0]
-    ri_values = {1: 0.00, 2: 0.00, 3: 0.58, 4: 0.90, 5: 1.12,
-                 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
     weighted_sum = matrix @ weights
     lambda_max = (weighted_sum / weights).mean()
     ci = (lambda_max - n) / (n - 1)
-    ri = ri_values.get(n, 1.49)
+    ri = RI_VALUES.get(n, 1.49)
     cr = ci / ri if ri != 0 else 0
-    return round(cr, 3)
+    return round(lambda_max, 4), round(ci, 4), round(cr, 4)
+
 
 def ahp_from_matrix(matrix, criteria_names):
-    """
-    Perform full AHP calculation from a comparison matrix.
+    logging.info("📊 Starting AHP calculation...")
 
-    Args:
-        matrix (np.ndarray): Pairwise comparison matrix.
-        criteria_names (list): Names of the criteria.
-
-    Returns:
-        dict: Dictionary of criteria weights.
-    """
-    logging.info("Starting AHP calculation...")
+    validate_matrix(matrix)
     normalized = normalize_matrix(matrix)
     weights = calculate_weights(normalized)
-    cr = calculate_consistency_ratio(matrix, weights)
+    lambda_max, ci, cr = calculate_consistency_ratio(matrix, weights)
 
     if cr > 0.1:
-        logging.warning(f"❗ High consistency ratio detected: CR = {cr} (> 0.1)")
+        logging.warning(f"❗ High Consistency Ratio: CR = {cr} (> 0.1)")
     else:
-        logging.info(f"✔ Consistency ratio is acceptable: CR = {cr}")
+        logging.info(f"✔ Acceptable Consistency Ratio: CR = {cr}")
 
-    weights_dict = dict(zip(criteria_names, weights.round(4)))
-    return weights_dict
+    result = {
+        "criteria": criteria_names,
+        "weights": weights.round(4).tolist(),
+        "λ_max": lambda_max,
+        "CI": ci,
+        "CR": cr
+    }
 
-def save_weights_to_json(weights_dict, output_path="data/criteria_weights.json"):
+    return result
+
+
+def save_ahp_result(result, json_path="data/criteria_weights.json", csv_path="data/criteria_weights.csv"):
     """
-    Save AHP weights to a JSON file.
-
-    Args:
-        weights_dict (dict): Criteria and their weights.
-        output_path (str): Output path for the JSON file.
+    Save AHP result as:
+    - JSON (with structure compatible with MCDA)
+    - CSV (for inspection)
     """
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(weights_dict, f, indent=4)
-    logging.info(f"✔ Weights saved to {output_path}")
+    # Reformat for MCDA
+    structured_weights = {
+        criterion: {
+            "weight": round(weight, 4),
+            "direction": "positive"  # يمكن تعديلها لاحقًا إذا لزم الأمر
+        }
+        for criterion, weight in zip(result["criteria"], result["weights"])
+    }
+
+    # Save JSON
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(structured_weights, f, indent=4, ensure_ascii=False)
+
+    # Save CSV
+    df = pd.DataFrame({
+        "Criterion": result["criteria"],
+        "Weight": result["weights"]
+    })
+    df["λ_max"] = result["λ_max"]
+    df["CI"] = result["CI"]
+    df["CR"] = result["CR"]
+    df.to_csv(csv_path, index=False)
+
+    logging.info(f"✔ Saved AHP result to {json_path} and {csv_path}")
 
 
+# ✅ مثال للاستخدام المباشر
+if __name__ == "__main__":
+    criteria = ["Distance_to_Roads", "Distance_to_Faults", "Population_Density", "LandUse_Score", "estimated_capacity"]
+
+    pairwise_matrix = np.array([
+        [1,     3,     5,     7,     1/3],
+        [1/3,   1,     3,     5,     1/5],
+        [1/5,   1/3,   1,     3,     1/7],
+        [1/7,   1/5,   1/3,   1,     1/9],
+        [3,     5,     7,     9,     1]
+    ])
+
+    result = ahp_from_matrix(pairwise_matrix, criteria)
+    save_ahp_result(result)

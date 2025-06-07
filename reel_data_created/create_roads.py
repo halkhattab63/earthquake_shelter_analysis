@@ -1,43 +1,52 @@
-
-
 import os
 import sys
 import osmnx as ox
 import geopandas as gpd
+import pandas as pd
 
-# 🖥️ UTF-8 destekli çıktı
 sys.stdout.reconfigure(encoding='utf-8')
 
 # 📍 Hedef şehir
 place_name = "Elazığ, Turkey"
+os.makedirs("data/processed", exist_ok=True)
 
-# 🔍 Yol türü filtreleri (OSM'deki highway etiketine göre)
-road_types = ["primary", "secondary", "tertiary", "residential"]
+# 🔍 Yol türü filtresi (OSM highway)
+selected_road_types = ["motorway", "trunk", "primary", "secondary", "tertiary", "residential"]
 
-print("🔽 OpenStreetMap üzerinden yol verisi indiriliyor...")
-gdf = ox.features_from_place(place_name, tags={"highway": True})
+print("🔽 Yol verisi indiriliyor (OpenStreetMap)...")
+gdf = ox.features_from_place(place_name, tags={"highway": selected_road_types})
 
-# 🛣️ Sadece yol türlerine göre filtreleme (daha az gürültü)
-gdf = gdf[gdf["highway"].isin(road_types)]
-
-# ❗ Sadece LineString/MultiLineString geometrilerini al
+# 🧼 Sadece yol geometrileri
 gdf = gdf[gdf.geometry.type.isin(["LineString", "MultiLineString"])]
 
-# 📏 Uzunluk hesaplamak için metrik sistem (EPSG:3857)
+# 🎯 EPSG:3857 ile uzunluk hesapla
 gdf_proj = gdf.to_crs(epsg=3857)
-gdf["length_m"] = gdf_proj.geometry.length
+gdf["length_m"] = gdf_proj.length
 
-# 🧹 Sadece belirli sütunları al (daha sade veri)
-columns = ["highway", "name", "geometry", "length_m"]
-existing = [col for col in columns if col in gdf.columns]
-roads_gdf = gdf[existing].copy()
+# 🎯 EPSG:4326 ile analiz uyumu
+gdf = gdf.to_crs(epsg=4326)
 
-# Kaydet
-os.makedirs("data/raw", exist_ok=True)
-output_path = "data/raw/roads.geojson"
-roads_gdf.to_file(output_path, driver="GeoJSON")
+# 🔢 Yol önceliği belirleme
+priority_map = {
+    "motorway": 1,
+    "trunk": 2,
+    "primary": 3,
+    "secondary": 4,
+    "tertiary": 5,
+    "residential": 6
+}
+gdf["importance"] = gdf["highway"].map(priority_map).fillna(9).astype(int)
 
-# Bilgilendirme
-print(f"✅ Yol verisi kaydedildi: {output_path}")
+# 🎯 Kolonları seç
+columns = ["name", "highway", "length_m", "importance", "geometry"]
+roads_gdf = gdf[columns].copy()
+
+# 💾 Kaydet
+roads_gdf.to_file("data/processed/roads.geojson", driver="GeoJSON")
+roads_gdf.drop(columns="geometry").to_csv("data/processed/roads_summary.csv", index=False)
+
+print("✅ Yol verisi başarıyla kaydedildi:")
+print(" - GeoJSON:", "data/processed/roads.geojson")
+print(" - CSV:", "data/processed/roads_summary.csv")
 print(f"🛣️ Toplam yol kaydı: {len(roads_gdf)}")
 print(roads_gdf.head())
