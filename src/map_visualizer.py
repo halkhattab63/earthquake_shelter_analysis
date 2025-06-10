@@ -134,3 +134,30 @@ def visualize_shelters(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fmap.save(output_path)
     logging.info(f"🗺️ Map saved to: {output_path}")
+
+
+# def show_path_on_map(path_coords, output_path="outputs/maps/evacuation_path.html"):
+#     fmap = folium.Map(location=path_coords[0][::-1], zoom_start=13, tiles="CartoDB positron")
+    
+#     folium.PolyLine(
+#         locations=[(y, x) for x, y in path_coords],  # (lat, lon)
+#         color="blue",
+#         weight=4,
+#         opacity=0.8,
+#         tooltip="Evacuation Route"
+#     ).add_to(fmap)
+
+#     folium.Marker(
+#         location=path_coords[0][::-1],
+#         icon=folium.Icon(color="green", icon="user"),
+#         tooltip="Start Point"
+#     ).add_to(fmap)
+
+#     folium.Marker(
+#         location=path_coords[-1][::-1],
+#         icon=folium.Icon(color="red", icon="info-sign"),
+#         tooltip="Shelter"
+#     ).add_to(fmap)
+
+#     fmap.save(output_path)
+#     print(f"✅ Evacuation path map saved to: {output_path}")
